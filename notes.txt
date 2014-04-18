@@ -1,0 +1,13 @@
+ubuntu Jenkins
+- use current Macaroni to build Macaroni, debug
+- use current Macaroni to build Macaroni, release
+    - save source
+- build source into "cavatappi"
+- use cavatappi to compile all tests and site
+- use cavatappi to compile Macaroni itself (again)
+
+
+0.3.%BUILDNUMBER%
+
+
+
