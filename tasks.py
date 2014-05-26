@@ -54,17 +54,30 @@ def copy_dir(src, dst):
     copy("%s/" % src, "%s/" % dst)
 
 
+def upload(server, src, dst):
+    dst = "%s:%s" % (server, unix_path(dst))
+    run(dir("."), "rsync --chmod=a+r,Da+x -avz %s/ %s" % (unix_path(src), dst))
+
+
 @step(groups=['build'])
 def build_normal():
+    """Builds Macaroni, then explicitly builds 32 bit release version."""
     app_dir = dir("trunk", "Main", "App")
     run(app_dir, "macaroni  --libraryRepoPath=..\Libraries "
         "--generatorPath=..\Generators -b --showPaths")
     run(dir(app_dir, "GeneratedSource"),
-        "bjam -j4 -d+2 -q --toolset=msvc-12.0 --address-model=32 link=static release")
+        "bjam -j4 -d+2 -q --toolset=msvc-12.0 address-model=32 threading=multi link=static release")
 
 
 @step(groups=['release'], depends_on=[build_normal])
+def build_tests():
+    """Builds the tests in Next. """
+    run(dir("trunk", "Next", "Tests"), "cavatappi -i")
+
+
+@step(groups=['release'], depends_on=[build_normal, build_tests])
 def build_release():
+    """Builds the docs in "release." """
     run(dir("trunk", "Next", "Release"), "cavatappi -b")
 
 
@@ -78,7 +91,7 @@ def build_pure_cpp():
         "bjam -d+2 -q -j8 link=static --address-model=32 release")
 
 
-@step(groups=['site']) #, depends_on=[build_rel@step(groups=ease])
+@step(groups=['site'], depends_on=[build_release])
 def build_site():
     with open(dir("macaroni-site", "source", "www", "version.mdoc"), 'w') as f:
         f.write("""<~lua
@@ -89,9 +102,18 @@ def build_site():
     site_target = dir("macaroni-site", "target", "www", "site")
     run(dir("macaroni-site"), "cavatappi -b")
     copy_dir(dir(release_target, "site"), dir(site_target, "docs"))
+
+    copy(dir(site_target, "..", "..", "..", "source", "www", "_static", "default.css"),
+         dir(site_target, "docs", "_static", "default.css"))
     # Copy downloads
     for suffix in ("windows-32", "pureCpp"):
         file_name = "macaroni-%s-%s.zip" % (VERSION, suffix)
         src = dir(release_target, file_name)
         dst = dir(site_target, "downloads", file_name)
         copy(src, dst)
+
+@step(groups=['upload'], depends_on=[build_site])
+def upload_site():
+    upload("macaroni-web-page",
+           dir("macaroni-site", "target", "www", "site"),
+           "/bordertown/www/macaroni/")
