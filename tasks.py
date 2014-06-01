@@ -66,29 +66,33 @@ def build_normal():
     run(app_dir, "macaroni  --libraryRepoPath=..\Libraries "
         "--generatorPath=..\Generators -b --showPaths")
     run(dir(app_dir, "GeneratedSource"),
-        "bjam -j4 -d+2 -q --toolset=msvc-12.0 address-model=32 threading=multi link=static release")
+        "b2 -j4 -d+2 -q --toolset=msvc-12.0 address-model=32 threading=multi link=static release")
 
 
 @step(groups=['release'], depends_on=[build_normal])
 def build_tests():
     """Builds the tests in Next. """
-    run(dir("trunk", "Next", "Tests"), "cavatappi -i")
+    run(dir("trunk", "Next", "Tests"), "cavatappi -d -i")
 
 
 @step(groups=['release'], depends_on=[build_normal, build_tests])
 def build_release():
     """Builds the docs in "release." """
-    run(dir("trunk", "Next", "Release"), "cavatappi -b")
+    run(dir("trunk", "Next", "Release"), "cavatappi -d -i")
 
 
 @step(groups=['pureCpp'], depends_on=[build_release])
 def build_pure_cpp():
+    """
+    Grab the "pureCpp" file made by the Release project, copy it somewhere
+    clean, then try to build it to see if it correctly compiles.
+    """
     src = dir("trunk", "Next", "Release", "target",
               "macaroni-%s-pureCpp" % VERSION)
     dst = dir("pureCppTest")
     copy_dir(src, dst)
-    run(dir(dst, "macaroni-%s-pureCpp" % VERSION),
-        "bjam -d+2 -q -j8 link=static --address-model=32 release")
+    run(dir(dst),
+        "b2 -d+2 -q -j8 link=static --address-model=32 release")
 
 
 @step(groups=['site'], depends_on=[build_release])
