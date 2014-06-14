@@ -10,7 +10,8 @@ VERSION="0.2.3"
 
 
 def step(*args, **kwargs):
-    if os.environ.get('SKIP_DEPS') is not None:
+    from options import SKIP_DEPS
+    if SKIP_DEPS:
         if 'depends_on' in kwargs:
             if 'runs_after' not in kwargs:
                 kwargs['runs_after'] = kwargs['depends_on']
@@ -44,6 +45,10 @@ def run(directory, args):
 
 def unix_path(path):
     return path.replace("\\", "/").replace("C:/", "/cygdrive/c/")
+
+
+def rm(dst):
+    run(dir("."), "rm -rf ./%s" % dst)
 
 
 def copy(src, dst):
@@ -121,3 +126,25 @@ def upload_site():
     upload("macaroni-web-page",
            dir("macaroni-site", "target", "www", "site"),
            "/bordertown/www/macaroni/")
+
+
+@step(groups=['chocolatey'], depends_on=[build_site])
+def chocolatey():
+    rm("macaroni-chocolatey/tools/*")
+    rm("macaroni-chocolatey/*.nupkg")
+    src = dir("trunk", "Next", "Release", "target",
+              "macaroni-%s-windows-32" % VERSION)
+    dst = dir("macaroni-chocolatey", "tools")
+    copy_dir(src, dst)
+
+    with open("../macaroni-chocolatey/macaroni.nuspec.template", 'r') as input:
+        contents = input.read()
+        parsed = contents.format(VERSION=VERSION)
+        with open("../macaroni-chocolatey/macaroni.nuspec", 'w') as output:
+            output.write(parsed)
+
+    d = dir("macaroni-chocolatey")
+    run(d, "cpack")
+    run(d, 'cinst macaroni -version %s -source "%%cd%%"' % VERSION)
+
+    print("\n\nDone! Now push it with cpush packageName.nupkg.\n\n")

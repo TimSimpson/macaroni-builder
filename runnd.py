@@ -1,7 +1,10 @@
 import os
 from proboscis import TestProgram
+import options
 
-os.environ.set('SKIP_DEPS', 'True')
+
+options.SKIP_DEPS=True
+
 
 import tasks
 
