@@ -6,11 +6,34 @@ import subprocess
 import sys
 
 
-VERSION="0.2.3"
+VERSION="0.3.0"
+RELEASE_NOTES="Adds class and function templates."
+CHOCOLATEY_VERSION="1"
+
+
+def announce_settings():
+    import options
+    from colorama import Fore
+    from colorama import Back
+    from colorama import Style
+    print(Fore.YELLOW + Back.BLUE + Style.BRIGHT + """
+        Macaroni Builder
+            Version      : {v}
+            Release Notes: {r}
+            Chocolate Ver: {c}
+            Skip Deps?   : {s}
+        """.format(
+        v = VERSION,
+        r = RELEASE_NOTES,
+        c = CHOCOLATEY_VERSION,
+        s = options.SKIP_DEPS)
+    )
+    print(Fore.RESET + Back.RESET + Style.RESET_ALL)
 
 
 def step(*args, **kwargs):
     from options import SKIP_DEPS
+    """Uses Proboscis test decorator to create an ordered step."""
     if SKIP_DEPS:
         if 'depends_on' in kwargs:
             if 'runs_after' not in kwargs:
@@ -20,11 +43,17 @@ def step(*args, **kwargs):
 
 
 def dir(*args):
+    """Returns a directory relative to "The Root."
+
+    "The Root" is assumed to be one level above the directory of this project.
+
+    """
     paths = [".."] + list(args)
     return str(os.path.abspath(os.path.join(*paths)))
 
 
 def run(directory, args):
+    """Runs a command."""
     print("cd %s" % directory)
     print("%s" % args)
     proc = subprocess.Popen(
@@ -47,10 +76,6 @@ def unix_path(path):
     return path.replace("\\", "/").replace("C:/", "/cygdrive/c/")
 
 
-def rm(dst):
-    run(dir("."), "rm -rf ./%s" % dst)
-
-
 def copy(src, dst):
     run(dir("."), "rsync -avz %s %s" % (unix_path(src), unix_path(dst)))
 
@@ -67,7 +92,7 @@ def upload(server, src, dst):
 @step(groups=['build'])
 def build_normal():
     """Builds Macaroni, then explicitly builds 32 bit release version."""
-    app_dir = dir("trunk", "Main", "App")
+    app_dir = dir("Macaroni", "Main", "App")
     run(app_dir, "macaroni  --libraryRepoPath=..\Libraries "
         "--generatorPath=..\Generators -b --showPaths")
     run(dir(app_dir, "GeneratedSource"),
@@ -77,13 +102,13 @@ def build_normal():
 @step(groups=['release'], depends_on=[build_normal])
 def build_tests():
     """Builds the tests in Next. """
-    run(dir("trunk", "Next", "Tests"), "cavatappi -d -i")
+    run(dir("Macaroni", "Next", "Tests"), "cavatappi -d -i")
 
 
 @step(groups=['release'], depends_on=[build_normal, build_tests])
 def build_release():
     """Builds the docs in "release." """
-    run(dir("trunk", "Next", "Release"), "cavatappi -d -i")
+    run(dir("Macaroni", "Next", "Release"), "cavatappi -d -i")
 
 
 @step(groups=['pureCpp'], depends_on=[build_release])
@@ -92,7 +117,7 @@ def build_pure_cpp():
     Grab the "pureCpp" file made by the Release project, copy it somewhere
     clean, then try to build it to see if it correctly compiles.
     """
-    src = dir("trunk", "Next", "Release", "target",
+    src = dir("Macaroni", "Next", "Release", "target",
               "macaroni-%s-pureCpp" % VERSION)
     dst = dir("pureCppTest")
     copy_dir(src, dst)
@@ -107,7 +132,7 @@ def build_site():
             macaroni_version="%s"
             ~>""" % VERSION)
     # Copy docs
-    release_target = dir("trunk", "Next", "Release", "target")
+    release_target = dir("Macaroni", "Next", "Release", "target")
     site_target = dir("macaroni-site", "target", "www", "site")
     run(dir("macaroni-site"), "cavatappi -b")
     copy_dir(dir(release_target, "site"), dir(site_target, "docs"))
@@ -121,6 +146,7 @@ def build_site():
         dst = dir(site_target, "downloads", file_name)
         copy(src, dst)
 
+
 @step(groups=['upload'], depends_on=[build_site])
 def upload_site():
     upload("macaroni-web-page",
@@ -130,21 +156,42 @@ def upload_site():
 
 @step(groups=['chocolatey'], depends_on=[build_site])
 def chocolatey():
-    rm("macaroni-chocolatey/tools/*")
-    rm("macaroni-chocolatey/*.nupkg")
-    src = dir("trunk", "Next", "Release", "target",
-              "macaroni-%s-windows-32" % VERSION)
-    dst = dir("macaroni-chocolatey", "tools")
-    copy_dir(src, dst)
+    chocolatey_dir = dir("macaroni-chocolatey")
+    full_choco_version = "%s.%s" % (VERSION, CHOCOLATEY_VERSION)
 
-    with open("../macaroni-chocolatey/macaroni.nuspec.template", 'r') as input:
-        contents = input.read()
-        parsed = contents.format(VERSION=VERSION)
-        with open("../macaroni-chocolatey/macaroni.nuspec", 'w') as output:
-            output.write(parsed)
+    def wipe_files():
+        for file in ["Generators", "Libraries", "macaroni.exe", "Messages.txt"]:
+            run(dir(chocolatey_dir, "tools"), "rm -rf ./%s" % file)
+        run(chocolatey_dir, "rm -rf ./*.nupkg")
 
-    d = dir("macaroni-chocolatey")
-    run(d, "cpack")
-    run(d, 'cinst macaroni -version %s -source "%%cd%%"' % VERSION)
+    def copy_files():
+        src = dir("Macaroni", "Next", "Release", "target",
+                  "macaroni-%s-windows-32" % VERSION)
+        dst = dir(chocolatey_dir, "tools")
+        copy_dir(src, dst)
 
-    print("\n\nDone! Now push it with cpush packageName.nupkg.\n\n")
+    def change_template():
+        with open("%s/macaroni.nuspec.template" % chocolatey_dir, 'r') as f:
+            template = f.read()
+        new_contents = (template.replace("{VERSION}", full_choco_version)
+                                .replace("{NOTES}", RELEASE_NOTES))
+        with open("%s/macaroni.nuspec" % chocolatey_dir, 'w') as f:
+            f.write(new_contents)
+
+    wipe_files()
+    copy_files()
+    change_template()
+
+    # Build package
+    run(chocolatey_dir, "cpack")
+    # Test
+    run(chocolatey_dir, "choco install macaroni -source %s -force" % chocolatey_dir)
+
+    # Push
+    cmd = ("nuget push macaroni.%s.nupkg -Source https://chocolatey.org/"
+           % full_choco_version)
+
+    print("RUN THIS!")
+    print("cd %s" % chocolatey_dir)
+    print(cmd)
+    #run(chocolatey_dir, cmd)

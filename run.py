@@ -1,11 +1,9 @@
+from colorama import init
 from proboscis import TestProgram
-
 import options
-
-
-options.SKIP_DEPS=True
-
-
 import tasks
 
-TestProgram().run_and_exit()
+if __name__ == "__main__":
+    init()
+    tasks.announce_settings()
+    TestProgram().run_and_exit()
