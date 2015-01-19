@@ -1,3 +1,6 @@
+from colorama import Fore
+from colorama import Back
+from colorama import Style
 import os
 from proboscis.asserts import *
 from proboscis import test
@@ -6,27 +9,29 @@ import subprocess
 import sys
 
 
-VERSION="0.3.0"
-RELEASE_NOTES="Adds class and function templates."
+VERSION="0.3.1"
+RELEASE_NOTES="Adds class and function templates plus support for trailing return types."
 CHOCOLATEY_VERSION="1"
+
+
+START_COLOR = Fore.YELLOW + Back.BLUE + Style.BRIGHT
+END_COLOR = Fore.RESET + Back.RESET + Style.RESET_ALL
 
 
 def announce_settings():
     import options
-    from colorama import Fore
-    from colorama import Back
-    from colorama import Style
-    print(Fore.YELLOW + Back.BLUE + Style.BRIGHT + """
+    print("""{sc}
         Macaroni Builder
             Version      : {v}
             Release Notes: {r}
             Chocolate Ver: {c}
             Skip Deps?   : {s}
-        """.format(
+        {ec}""".format(
         v = VERSION,
         r = RELEASE_NOTES,
         c = CHOCOLATEY_VERSION,
-        s = options.SKIP_DEPS)
+        s = options.SKIP_DEPS,
+        sc=START_COLOR, ec=END_COLOR)
     )
     print(Fore.RESET + Back.RESET + Style.RESET_ALL)
 
@@ -54,8 +59,8 @@ def dir(*args):
 
 def run(directory, args):
     """Runs a command."""
-    print("cd %s" % directory)
-    print("%s" % args)
+    print("%scd %s" % (START_COLOR, directory))
+    print("%s%s" % (args, END_COLOR))
     proc = subprocess.Popen(
         args,
         bufsize=1,
@@ -88,6 +93,10 @@ def upload(server, src, dst):
     dst = "%s:%s" % (server, unix_path(dst))
     run(dir("."), "rsync --chmod=a+r,Da+x -avz %s/ %s" % (unix_path(src), dst))
 
+# @step(groups=['rmPureCpp'])
+# def rmPureCpp():
+#     releaseTarget = dir("Macaroni", "Next", "Release", "target")
+#     run(releaseTarget, "rm -rf ./macaroni-%s-pureCpp" % VERSION)
 
 @step(groups=['build'])
 def build_normal():
@@ -106,6 +115,23 @@ def build_tests():
 
 
 @step(groups=['release'], depends_on=[build_normal, build_tests])
+def build_windows_exec():
+    run(dir("Macaroni", "Main", "App", "PureCpp"),
+        "bjam -d+2 -j8 --toolset=msvc-12.0 link=static "
+        "threading=multi address-model=32 release")
+
+@step(groups=['release', 'linux'], depends_on=[build_normal, build_tests])
+def build_linux_exec():
+    # run(dir("Macaroni"),
+    #     "ssh macaroni-builder mbuild build-release")
+    pass
+
+@step(groups=['release'], depends_on=[
+          build_normal,
+          build_tests,
+          build_windows_exec,
+          build_linux_exec
+      ])
 def build_release():
     """Builds the docs in "release." """
     run(dir("Macaroni", "Next", "Release"), "cavatappi -d -i")
